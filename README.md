@@ -1,4 +1,4 @@
-# EML-REPLICATOR
+# EML-REPLICATOR 🤖
 
 This tool read all the EML (RFC822 / RFC2822) in a directory and copy them in a IMAP folder on the mailbox of your choice.
 
