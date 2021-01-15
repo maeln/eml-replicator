@@ -17,6 +17,7 @@ FLAGS:
     -V, --version    Prints version information
 
 OPTIONS:
+    -f, --folder <FOLDER>            IMAP Folder in which to put the EMLs. [default: INBOX]
     -l, --login <LOGIN>              login of the mailbox. [default: ]
     -p, --password <PASSWORD>        password of the mailbox. [default: ]
     -s, --port <IMAP_SERVER_PORT>    Port to connect to the imap server. [default: 993]

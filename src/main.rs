@@ -14,6 +14,7 @@ struct Config {
     port: u16,
     login: String,
     password: String,
+    folder: String,
     directory: String,
 }
 
@@ -48,6 +49,7 @@ impl Config {
             .unwrap();
         let login = String::from(matches.value_of("login").unwrap());
         let password = String::from(matches.value_of("password").unwrap());
+        let folder = String::from(matches.value_of("folder").unwrap());
         let directory = String::from(matches.value_of("DIR").unwrap());
 
         Config {
@@ -55,6 +57,7 @@ impl Config {
             port,
             login,
             password,
+            folder,
             directory,
         }
     }
@@ -103,6 +106,15 @@ fn main() {
                 .default_value(""),
         )
         .arg(
+            Arg::with_name("folder")
+                .short("f")
+                .long("folder")
+                .value_name("FOLDER")
+                .help("IMAP Folder in which to put the EMLs.")
+                .takes_value(true)
+                .default_value("INBOX"),
+        )
+        .arg(
             Arg::with_name("DIR")
                 .help("Directory in which to get the EML files.")
                 .required(true)
@@ -120,7 +132,7 @@ fn main() {
     for eml in emls_files {
         let rfc822 = fs::read_to_string(eml).expect("Failed to read eml file.");
         session
-            .append("INBOX", &rfc822)
+            .append(&conf.folder, &rfc822)
             .expect("Could not copy eml file to inbox.");
     }
 }
