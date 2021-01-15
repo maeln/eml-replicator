@@ -1,0 +1,10 @@
+[package]
+name = "eml-replicator"
+version = "0.1.0"
+authors = ["Maël Naccache Tüfekçi <contact@maeln.com>"]
+edition = "2018"
+
+[dependencies]
+imap = "2.4"
+native-tls = "0.2"
+clap = "2.33"
