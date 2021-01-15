@@ -3,6 +3,13 @@ name = "eml-replicator"
 version = "0.1.0"
 authors = ["Maël Naccache Tüfekçi <contact@maeln.com>"]
 edition = "2018"
+license = "CECILL-2.1"
+readme = "README.md"
+description = "A tool to import EML files to an IMAP inbox."
+homepage = "https://github.com/maeln/eml-replicator"
+repository = "https://github.com/maeln/eml-replicator"
+keywords = ["email", "eml", "imap", "cli"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 imap = "2.4"
