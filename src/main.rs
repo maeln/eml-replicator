@@ -4,6 +4,7 @@ use std::io::{self, Error, ErrorKind};
 use std::path::{Path, PathBuf};
 
 use clap::{App, Arg, ArgMatches, SubCommand};
+use walkdir::WalkDir;
 
 extern crate imap;
 extern crate native_tls;
@@ -16,19 +17,36 @@ struct Config {
     password: String,
     folder: String,
     directory: String,
+    recursive: bool,
+    symlink: bool,
 }
 
-fn list_eml_file(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
+fn push_ext(list: &mut Vec<PathBuf>, entry: &Path, ext: &str) {
+    let path = entry;
+    if path.is_file() {
+        let ext = path.extension().map(|x| x.to_str().unwrap()).unwrap_or("");
+        if ext == ext {
+            list.push(path.to_path_buf());
+        }
+    }
+}
+
+fn list_eml_file(
+    dir: &Path,
+    recursive: bool,
+    follow_symlink: bool,
+) -> std::io::Result<Vec<PathBuf>> {
     if dir.is_dir() {
         let mut emls: Vec<PathBuf> = Vec::new();
-        for entry in fs::read_dir(dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_file() {
-                let ext = path.extension();
-                if ext.is_some() && ext.unwrap() == "eml" {
-                    emls.push(path);
-                }
+        if recursive {
+            for entry in WalkDir::new(dir).follow_links(follow_symlink) {
+                let entry = entry?;
+                push_ext(&mut emls, entry.path(), "eml");
+            }
+        } else {
+            for entry in fs::read_dir(dir)? {
+                let entry = entry?.path();
+                push_ext(&mut emls, &entry, "eml");
             }
         }
         return Ok(emls);
@@ -52,6 +70,9 @@ impl Config {
         let folder = String::from(matches.value_of("folder").unwrap());
         let directory = String::from(matches.value_of("DIR").unwrap());
 
+        let recursive = matches.is_present("recursive");
+        let symlink = matches.is_present("symlink");
+
         Config {
             server,
             port,
@@ -59,6 +80,8 @@ impl Config {
             password,
             folder,
             directory,
+            recursive,
+            symlink,
         }
     }
 }
@@ -70,8 +93,6 @@ fn main() {
         .about("A tool that read EML files and copy them to a IMAP mailbox.")
         .arg(
             Arg::with_name("server")
-                .short("s")
-                .long("server")
                 .value_name("IMAP_SERVER")
                 .help("IMAP server to connect to.")
                 .takes_value(true)
@@ -80,7 +101,6 @@ fn main() {
         )
         .arg(
             Arg::with_name("server_port")
-                .short("sp")
                 .long("port")
                 .value_name("IMAP_SERVER_PORT")
                 .help("Port to connect to the imap server.")
@@ -115,6 +135,18 @@ fn main() {
                 .default_value("INBOX"),
         )
         .arg(
+            Arg::with_name("recursive")
+                .short("r")
+                .long("recursive")
+                .help("Goes through the directory recursively to find EML files."),
+        )
+        .arg(
+            Arg::with_name("symlink")
+                .short("s")
+                .long("follow-symlink")
+                .help("Follow symlink when crawling the directory recursively."),
+        )
+        .arg(
             Arg::with_name("DIR")
                 .help("Directory in which to get the EML files.")
                 .required(true)
@@ -124,7 +156,8 @@ fn main() {
         .get_matches();
 
     let conf = Config::new(matches);
-    let emls_files = list_eml_file(Path::new(&conf.directory)).unwrap();
+    let emls_files =
+        list_eml_file(Path::new(&conf.directory), conf.recursive, conf.symlink).unwrap();
     println!("EML selected: {:?}", emls_files);
     let tls = native_tls::TlsConnector::builder().build().unwrap();
     let client = imap::connect((conf.server.clone(), conf.port), conf.server, &tls).unwrap();
