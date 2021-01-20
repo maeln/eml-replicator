@@ -1,13 +1,10 @@
-extern crate clap;
-use std::fs::{self, DirEntry};
-use std::io::{self, Error, ErrorKind};
+use indicatif::ProgressStyle;
+use std::fs::{self};
+use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 
-use clap::{App, Arg, ArgMatches, SubCommand};
+use clap::{App, Arg, ArgMatches};
 use walkdir::WalkDir;
-
-extern crate imap;
-extern crate native_tls;
 
 #[derive(Clone, Debug)]
 struct Config {
@@ -21,11 +18,11 @@ struct Config {
     symlink: bool,
 }
 
-fn push_ext(list: &mut Vec<PathBuf>, entry: &Path, ext: &str) {
+fn push_ext(list: &mut Vec<PathBuf>, entry: &Path, ext_used: &str) {
     let path = entry;
     if path.is_file() {
         let ext = path.extension().map(|x| x.to_str().unwrap()).unwrap_or("");
-        if ext == ext {
+        if ext_used == ext {
             list.push(path.to_path_buf());
         }
     }
@@ -158,14 +155,27 @@ fn main() {
     let conf = Config::new(matches);
     let emls_files =
         list_eml_file(Path::new(&conf.directory), conf.recursive, conf.symlink).unwrap();
-    println!("EML selected: {:?}", emls_files);
+
+    println!("EML found:");
+    for path in &emls_files {
+        println!("- {}", path.to_str().unwrap_or(""));
+    }
+
     let tls = native_tls::TlsConnector::builder().build().unwrap();
     let client = imap::connect((conf.server.clone(), conf.port), conf.server, &tls).unwrap();
     let mut session = client.login(conf.login, conf.password).unwrap();
-    for eml in emls_files {
+    let bar = indicatif::ProgressBar::new(emls_files.len() as u64);
+    bar.set_style(
+        ProgressStyle::default_bar()
+            .template("[{elapsed_precise}] {msg} {pos:>7}/{len:7} {bar:40.cyan/blue}"),
+    );
+    bar.set_message("EML Copied");
+    for eml in &emls_files {
         let rfc822 = fs::read_to_string(eml).expect("Failed to read eml file.");
         session
             .append(&conf.folder, &rfc822)
             .expect("Could not copy eml file to inbox.");
+        bar.inc(1);
     }
+    bar.finish();
 }
