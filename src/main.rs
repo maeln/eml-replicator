@@ -4,19 +4,9 @@ use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 
 use clap::{App, Arg, ArgMatches};
+use rand::distributions::Alphanumeric;
+use rand::Rng;
 use walkdir::WalkDir;
-
-#[derive(Clone, Debug)]
-struct Config {
-    server: String,
-    port: u16,
-    login: String,
-    password: String,
-    folder: String,
-    directory: String,
-    recursive: bool,
-    symlink: bool,
-}
 
 fn push_ext(list: &mut Vec<PathBuf>, entry: &Path, ext_used: &str) {
     let path = entry;
@@ -54,6 +44,41 @@ fn list_eml_file(
     ));
 }
 
+fn randomize_message_id(eml: &String) -> Result<String, String> {
+    let mut new_eml = String::new();
+
+    let header_pos = eml.find("Message-ID:");
+    if header_pos.is_none() {
+        return Err("Could not find Message-ID in the EML.".to_string());
+    }
+    let (fpart, lpart) = eml.split_at(header_pos.unwrap());
+    new_eml.push_str(fpart);
+
+    let (_mid, rest) = lpart.split_at(lpart.find('\n').expect("Malformed Message-ID."));
+    new_eml.push_str("Message-ID: ");
+    let rand_string: String = rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(30)
+        .map(char::from)
+        .collect();
+    new_eml.push_str(&rand_string);
+    new_eml.push_str(rest);
+    return Ok(new_eml);
+}
+
+#[derive(Clone, Debug)]
+struct Config {
+    server: String,
+    port: u16,
+    login: String,
+    password: String,
+    folder: String,
+    directory: String,
+    recursive: bool,
+    symlink: bool,
+    random_id: bool,
+}
+
 impl Config {
     pub fn new(matches: ArgMatches) -> Config {
         let server = String::from(matches.value_of("server").unwrap());
@@ -69,7 +94,7 @@ impl Config {
 
         let recursive = matches.is_present("recursive");
         let symlink = matches.is_present("symlink");
-
+        let random_id = matches.is_present("random-message-id");
         Config {
             server,
             port,
@@ -79,13 +104,14 @@ impl Config {
             directory,
             recursive,
             symlink,
+            random_id,
         }
     }
 }
 
 fn main() {
     let matches = App::new("eml-replicator")
-        .version("1.0")
+        .version("1.1")
         .author("Maël Naccache Tüfekçi")
         .about("A tool that read EML files and copy them to a IMAP mailbox.")
         .arg(
@@ -144,6 +170,11 @@ fn main() {
                 .help("Follow symlink when crawling the directory recursively."),
         )
         .arg(
+            Arg::with_name("random-message-id")
+                .long("random-message-id")
+                .help("Randomize the Message-ID in the emls before sending them."),
+        )
+        .arg(
             Arg::with_name("DIR")
                 .help("Directory in which to get the EML files.")
                 .required(true)
@@ -172,9 +203,16 @@ fn main() {
     bar.set_message("EML Copied");
     for eml in &emls_files {
         let rfc822 = fs::read_to_string(eml).expect("Failed to read eml file.");
-        session
-            .append(&conf.folder, &rfc822)
-            .expect("Could not copy eml file to inbox.");
+        if conf.random_id {
+            let randomize_id = randomize_message_id(&rfc822).unwrap();
+            session
+                .append(&conf.folder, &randomize_id)
+                .expect("Could not copy eml file to inbox.");
+        } else {
+            session
+                .append(&conf.folder, &rfc822)
+                .expect("Could not copy eml file to inbox.");
+        }
         bar.inc(1);
     }
     bar.finish();

@@ -5,23 +5,20 @@ This tool read all the EML (RFC822 / RFC2822) in a directory and copy them in a 
 Usage:
 
 ```
-eml-replicator 1.0
+eml-replicator 1.1
 Maël Naccache Tüfekçi
 A tool that read EML files and copy them to a IMAP mailbox.
 
 USAGE:
-    eml-replicator [FLAGS] [OPTIONS] <IMAP_SERVER> <DIR>
+    eml-replicator.exe [FLAGS] [OPTIONS] <IMAP_SERVER> <DIR>
 
 FLAGS:
-    -h, --help              Prints help information
-    -r, --recursive         Goes through the directory recursively to find EML files.
-    -s, --follow-symlink    Follow symlink when crawling the directory recursively.
-    -V, --version           Prints version information
+    -h, --help                 Prints help information
+    -r, --recursive            Goes through the directory recursively to find EML files.
+    -s, --follow-symlink       Follow symlink when crawling the directory recursively.
+    -V, --version              Prints version information
 
 OPTIONS:
-    -f, --folder <FOLDER>            IMAP Folder in which to put the EMLs. [default: INBOX]
-    -l, --login <LOGIN>              login of the mailbox. [default: ]
-    -p, --password <PASSWORD>        password of the mailbox. [default: ]
         --port <IMAP_SERVER_PORT>    Port to connect to the imap server. [default: 993]
 
 ARGS:
