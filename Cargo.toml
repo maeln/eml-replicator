@@ -1,6 +1,6 @@
 [package]
 name = "eml-replicator"
-version = "0.1.3"
+version = "0.1.4"
 authors = ["Maël Naccache Tüfekçi <contact@maeln.com>"]
 edition = "2018"
 license = "CECILL-2.1"

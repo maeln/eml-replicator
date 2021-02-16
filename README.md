@@ -5,7 +5,7 @@ This tool read all the EML (RFC822 / RFC2822) in a directory and copy them in a 
 Usage:
 
 ```
-eml-replicator 0.1.3
+eml-replicator 0.1.4
 Maël Naccache Tüfekçi
 A tool that read EML files and copy them to a IMAP mailbox.
 

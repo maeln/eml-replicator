@@ -2,7 +2,7 @@
 extern crate lazy_static;
 use indicatif::ProgressStyle;
 use regex::Regex;
-use std::fs::{self};
+use std::fs;
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 
@@ -206,8 +206,9 @@ fn main() {
     }
 
     let tls = native_tls::TlsConnector::builder().build().unwrap();
-    let client = imap::connect((conf.server.clone(), conf.port), conf.server, &tls).unwrap();
-    let mut session = client.login(conf.login, conf.password).unwrap();
+    let client =
+        imap::connect((conf.server.clone(), conf.port.clone()), &conf.server, &tls).unwrap();
+    let mut session = client.login(&conf.login, &conf.password).unwrap();
     let bar = indicatif::ProgressBar::new(emls_files.len() as u64);
     bar.set_style(
         ProgressStyle::default_bar()
@@ -215,7 +216,7 @@ fn main() {
     );
     bar.set_message("EML Copied");
     for eml in &emls_files {
-        let rfc822 = fs::read_to_string(eml).expect("Failed to read eml file.");
+        let mut rfc822 = fs::read_to_string(eml).expect("Failed to read eml file.");
         if conf.random_id {
             let randomize_id = randomize_message_id(&rfc822);
             if randomize_id.is_err() {
@@ -224,15 +225,23 @@ fn main() {
                     eml.to_string_lossy()
                 );
             } else {
-                session
-                    .append(&conf.folder, &randomize_id.unwrap())
-                    .expect("Could not copy eml file to inbox.");
+                rfc822 = randomize_id.unwrap();
             }
-        } else {
+        }
+
+        let send_res = session.append(&conf.folder, &rfc822);
+        if send_res.is_err() {
+            // we might have been disconnected so we retry.
+            let _ = session.close();
+            let new_client =
+                imap::connect((conf.server.clone(), conf.port.clone()), &conf.server, &tls)
+                    .unwrap();
+            session = new_client.login(&conf.login, &conf.password).unwrap();
             session
                 .append(&conf.folder, &rfc822)
-                .expect("Could not copy eml file to inbox.");
+                .expect("Could not copy email.");
         }
+
         bar.inc(1);
     }
     bar.finish();
