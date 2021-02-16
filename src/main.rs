@@ -1,4 +1,7 @@
+#[macro_use]
+extern crate lazy_static;
 use indicatif::ProgressStyle;
+use regex::Regex;
 use std::fs::{self};
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
@@ -45,13 +48,18 @@ fn list_eml_file(
 }
 
 fn randomize_message_id(eml: &String) -> Result<String, String> {
+    lazy_static! {
+        static ref MID_RE: Regex = Regex::new(r"(?imu)^message-id:.+$").unwrap();
+    }
+
     let mut new_eml = String::new();
 
-    let header_pos = eml.find("Message-ID:");
+    let header_pos = MID_RE.find(eml);
     if header_pos.is_none() {
         return Err("Could not find Message-ID in the EML.".to_string());
     }
-    let (fpart, lpart) = eml.split_at(header_pos.unwrap());
+
+    let (fpart, lpart) = eml.split_at(header_pos.unwrap().start());
     new_eml.push_str(fpart);
 
     let (_mid, rest) = lpart.split_at(lpart.find('\n').expect("Malformed Message-ID."));
@@ -95,6 +103,7 @@ impl Config {
         let recursive = matches.is_present("recursive");
         let symlink = matches.is_present("symlink");
         let random_id = matches.is_present("random-message-id");
+
         Config {
             server,
             port,
@@ -192,6 +201,10 @@ fn main() {
         println!("- {}", path.to_str().unwrap_or(""));
     }
 
+    if conf.random_id {
+        println!("Randomizing Message-IDs.")
+    }
+
     let tls = native_tls::TlsConnector::builder().build().unwrap();
     let client = imap::connect((conf.server.clone(), conf.port), conf.server, &tls).unwrap();
     let mut session = client.login(conf.login, conf.password).unwrap();
@@ -204,10 +217,17 @@ fn main() {
     for eml in &emls_files {
         let rfc822 = fs::read_to_string(eml).expect("Failed to read eml file.");
         if conf.random_id {
-            let randomize_id = randomize_message_id(&rfc822).unwrap();
-            session
-                .append(&conf.folder, &randomize_id)
-                .expect("Could not copy eml file to inbox.");
+            let randomize_id = randomize_message_id(&rfc822);
+            if randomize_id.is_err() {
+                println!(
+                    "Could not find Message-ID for file {}, skipping.",
+                    eml.to_string_lossy()
+                );
+            } else {
+                session
+                    .append(&conf.folder, &randomize_id.unwrap())
+                    .expect("Could not copy eml file to inbox.");
+            }
         } else {
             session
                 .append(&conf.folder, &rfc822)
