@@ -12,7 +12,7 @@ keywords = ["email", "eml", "imap", "cli"]
 categories = ["command-line-utilities"]
 
 [dependencies]
-imap = "2.4"
+imap = "3.0.0-alpha.4"
 native-tls = "0.2"
 clap = "2.33"
 walkdir = "2"
