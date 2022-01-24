@@ -1,12 +1,16 @@
 #[macro_use]
 extern crate lazy_static;
+
 use indicatif::ProgressStyle;
-use regex::Regex;
+use regex::bytes::Regex;
 use std::fs;
 use std::io::{Error, ErrorKind};
+use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 
 use clap::{App, Arg, ArgMatches};
+use imap::Session;
+use native_tls::{TlsConnector, TlsStream};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use walkdir::WalkDir;
@@ -47,12 +51,12 @@ fn list_eml_file(
     ));
 }
 
-fn randomize_message_id(eml: &String) -> Result<String, String> {
+fn randomize_message_id(eml: &[u8]) -> Result<Vec<u8>, String> {
     lazy_static! {
         static ref MID_RE: Regex = Regex::new(r"(?imu)^message-id:.+$").unwrap();
     }
 
-    let mut new_eml = String::new();
+    let mut new_eml = Vec::new();
 
     let header_pos = MID_RE.find(eml);
     if header_pos.is_none() {
@@ -60,17 +64,19 @@ fn randomize_message_id(eml: &String) -> Result<String, String> {
     }
 
     let (fpart, lpart) = eml.split_at(header_pos.unwrap().start());
-    new_eml.push_str(fpart);
+    new_eml.extend_from_slice(fpart);
 
-    let (_mid, rest) = lpart.split_at(lpart.find('\n').expect("Malformed Message-ID."));
-    new_eml.push_str("Message-ID: ");
+    let lpart_str = std::str::from_utf8(lpart)
+        .map_err(|e| format!("UTF error: {e:?}"))?;
+    let (_mid, rest) = lpart.split_at(lpart_str.find('\n').expect("Malformed Message-ID."));
+    new_eml.extend_from_slice("Message-ID: ".as_bytes());
     let rand_string: String = rand::thread_rng()
         .sample_iter(&Alphanumeric)
         .take(30)
         .map(char::from)
         .collect();
-    new_eml.push_str(&rand_string);
-    new_eml.push_str(rest);
+    new_eml.extend_from_slice(rand_string.as_bytes());
+    new_eml.extend_from_slice(rest);
     return Ok(new_eml);
 }
 
@@ -85,6 +91,7 @@ struct Config {
     recursive: bool,
     symlink: bool,
     random_id: bool,
+    skip_verify_cert: bool,
 }
 
 impl Config {
@@ -103,6 +110,7 @@ impl Config {
         let recursive = matches.is_present("recursive");
         let symlink = matches.is_present("symlink");
         let random_id = matches.is_present("random-message-id");
+        let skip_verify_cert = matches.is_present("skip-verify-cert");
 
         Config {
             server,
@@ -114,6 +122,7 @@ impl Config {
             recursive,
             symlink,
             random_id,
+            skip_verify_cert
         }
     }
 }
@@ -184,6 +193,11 @@ fn main() {
                 .help("Randomize the Message-ID in the emls before sending them."),
         )
         .arg(
+            Arg::with_name("skip-verify-cert")
+                .long("skip-verify-cert")
+                .help("Skip checking server certificate when connecting over TLS."),
+        )
+        .arg(
             Arg::with_name("DIR")
                 .help("Directory in which to get the EML files.")
                 .required(true)
@@ -205,10 +219,7 @@ fn main() {
         println!("Randomizing Message-IDs.")
     }
 
-    let tls = native_tls::TlsConnector::builder().build().unwrap();
-    let client =
-        imap::connect((conf.server.clone(), conf.port.clone()), &conf.server, &tls).unwrap();
-    let mut session = client.login(&conf.login, &conf.password).unwrap();
+    let mut session = connect(&conf);
     let bar = indicatif::ProgressBar::new(emls_files.len() as u64);
     bar.set_style(
         ProgressStyle::default_bar()
@@ -216,7 +227,7 @@ fn main() {
     );
     bar.set_message("EML Copied");
     for eml in &emls_files {
-        let mut rfc822 = fs::read_to_string(eml).expect("Failed to read eml file.");
+        let mut rfc822 = fs::read(eml).expect("Failed to read eml file.");
         if conf.random_id {
             let randomize_id = randomize_message_id(&rfc822);
             if randomize_id.is_err() {
@@ -229,20 +240,31 @@ fn main() {
             }
         }
 
-        let send_res = session.append(&conf.folder, &rfc822);
+        let send_res = session.append(&conf.folder, &rfc822)
+            .finish();
         if send_res.is_err() {
             // we might have been disconnected so we retry.
             let _ = session.close();
-            let new_client =
-                imap::connect((conf.server.clone(), conf.port.clone()), &conf.server, &tls)
-                    .unwrap();
-            session = new_client.login(&conf.login, &conf.password).unwrap();
+            session = connect(&conf);
             session
                 .append(&conf.folder, &rfc822)
+                .finish()
                 .expect("Could not copy email.");
         }
 
         bar.inc(1);
     }
     bar.finish();
+}
+
+fn connect(conf: &Config) -> Session<TlsStream<TcpStream>> {
+    let skip_verify_cert = conf.skip_verify_cert;
+    let client = imap::ClientBuilder::new(&conf.server, conf.port)
+        .connect(|domain, tcp| {
+            let ssl_conn = TlsConnector::builder()
+                .danger_accept_invalid_certs(skip_verify_cert)
+                .build()?;
+            Ok(TlsConnector::connect(&ssl_conn, domain, tcp)?)
+        }).unwrap();
+    client.login(&conf.login, &conf.password).unwrap()
 }
